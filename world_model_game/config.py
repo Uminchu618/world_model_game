@@ -1,4 +1,4 @@
-"""Configuration dataclasses for the cooperative signaling world model experiments."""
+"""協調的なシグナリング世界モデル実験で利用する設定群。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Dict, Tuple
 
 @dataclass
 class GameConfig:
-    """Configuration for the tag-based iterated prisoner's dilemma environment."""
+    """タグ付き反復囚人のジレンマ環境の設定をまとめたデータクラス。"""
 
     num_tags: int = 4
     max_steps: int = 20
@@ -16,17 +16,17 @@ class GameConfig:
     seed: int = 0
     payoff_matrix: Dict[Tuple[int, int], Tuple[float, float]] = field(
         default_factory=lambda: {
-            (0, 0): (3.0, 3.0),  # mutual cooperation
-            (0, 1): (0.0, 5.0),  # agent cooperates, opponent defects
-            (1, 0): (5.0, 0.0),  # agent defects, opponent cooperates
-            (1, 1): (1.0, 1.0),  # mutual defection
+            (0, 0): (3.0, 3.0),  # 相互協調
+            (0, 1): (0.0, 5.0),  # 自分が協調・相手が裏切り
+            (1, 0): (5.0, 0.0),  # 自分が裏切り・相手が協調
+            (1, 1): (1.0, 1.0),  # 相互裏切り
         }
     )
 
 
 @dataclass
 class TrainingConfig:
-    """Configuration parameters for self-play training."""
+    """自己対戦学習に用いるハイパーパラメータ群。"""
 
     episodes: int = 4000
     gamma: float = 0.96
@@ -45,7 +45,7 @@ class TrainingConfig:
 
 @dataclass
 class AnalysisConfig:
-    """Configuration for analysis utilities such as probing and interventions."""
+    """プロービングや介入解析に関する設定値。"""
 
     probe_epochs: int = 200
     probe_learning_rate: float = 1e-2

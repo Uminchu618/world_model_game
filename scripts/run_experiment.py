@@ -1,4 +1,4 @@
-"""Run training and analysis for the cooperative world model signaling game."""
+"""世界モデルシグナリング実験を一括実行するCLIスクリプト。"""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from world_model_game import analysis
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """コマンドライン引数を定義したパーサを構築する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--episodes", type=int, default=TrainingConfig.episodes)
     parser.add_argument("--max-steps", type=int, default=GameConfig.max_steps)
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """学習・評価・解析を順に実行し、結果をJSONにまとめる。"""
     parser = build_parser()
     args = parser.parse_args()
 

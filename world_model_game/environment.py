@@ -1,4 +1,4 @@
-"""Environment definition for the tag-based iterated prisoner's dilemma."""
+"""タグ付き反復囚人のジレンマ環境の定義。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .config import GameConfig
 
 @dataclass
 class Observation:
-    """Observation returned to an agent."""
+    """エージェントに返される観測を保持するデータ構造。"""
 
     vector: torch.Tensor
     opponent_action: Optional[int]
@@ -21,9 +21,10 @@ class Observation:
 
 
 class TagPrisonersDilemma:
-    """Iterated prisoner's dilemma with dynamically selected tags."""
+    """タグ選択を伴う反復囚人のジレンマ環境。"""
 
     def __init__(self, config: GameConfig):
+        """設定を受け取り、環境の内部状態を初期化する。"""
         self.config = config
         self.device = torch.device("cpu")
         self.payoff_matrix = config.payoff_matrix
@@ -34,7 +35,7 @@ class TagPrisonersDilemma:
         if self.num_agents % 2 != 0:
             raise ValueError("Number of agents must be even for random pairing.")
 
-        # Observation layout slices
+        # 観測ベクトルにおける各情報のスライス位置
         self._action_slice = slice(0, 2)
         self._tag_slice = slice(2, 2 + self.num_tags)
         self._time_fraction_index = 2 + self.num_tags
@@ -47,11 +48,13 @@ class TagPrisonersDilemma:
 
     @property
     def observation_size(self) -> int:
+        """観測ベクトルの全長を返す。"""
         return 4 + self.num_tags
 
     def _build_observation(
         self, opponent_action: Optional[int], opponent_tag: Optional[int], step: int
     ) -> Observation:
+        """相手の行動・タグ情報から観測ベクトルを構成する。"""
         vec = torch.zeros(self.observation_size, dtype=torch.float32, device=self.device)
 
         if opponent_action is not None:
@@ -67,7 +70,7 @@ class TagPrisonersDilemma:
         return Observation(vec, opponent_action, opponent_tag, step)
 
     def override_observation_tag(self, observation: Observation, new_tag: Optional[int]) -> Observation:
-        """Return a copy of the observation with a different perceived opponent tag."""
+        """観測のタグ成分だけを書き換えた複製を返し、介入実験に用いる。"""
 
         vector = observation.vector.clone()
         vector[self._tag_slice] = 0.0
@@ -77,6 +80,7 @@ class TagPrisonersDilemma:
         return Observation(vector, observation.opponent_action, new_tag, observation.step)
 
     def reset(self) -> List[Observation]:
+        """環境を初期状態に戻し、各エージェントへの初期観測を生成する。"""
         self.step_index = 0
         self._history: List[dict] = []
         self._last_actions: List[Optional[int]] = [None] * self.num_agents
@@ -85,16 +89,19 @@ class TagPrisonersDilemma:
         return [self._build_observation(None, None, 0) for _ in range(self.num_agents)]
 
     def _compute_pair_rewards(self, action_a: int, action_b: int) -> Tuple[float, float]:
+        """行動ペアに応じた報酬を利得表から取得する。"""
         payoff = self.payoff_matrix[(action_a, action_b)]
         return float(payoff[0]), float(payoff[1])
 
     def _sample_pairs(self) -> List[Tuple[int, int]]:
+        """ラウンド毎にエージェントをランダムにペアリングする。"""
         ordering = torch.randperm(self.num_agents, generator=self._rng).tolist()
         return [(ordering[i], ordering[i + 1]) for i in range(0, self.num_agents, 2)]
 
     def step(
         self, actions: Sequence[int], tags: Sequence[int]
     ) -> Tuple[List[Observation], Tuple[float, ...], bool, dict]:
+        """全エージェントの行動とタグを受け取り、次状態と報酬を計算する。"""
         if len(actions) != self.num_agents or len(tags) != self.num_agents:
             raise ValueError(f"Expected {self.num_agents} actions and tags.")
 
@@ -156,4 +163,5 @@ class TagPrisonersDilemma:
         return next_observations, tuple(rewards), done, info
 
     def get_history(self) -> List[dict]:
+        """これまでのペア情報と行動履歴をコピーして返す。"""
         return list(self._history)

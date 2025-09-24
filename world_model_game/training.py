@@ -1,4 +1,4 @@
-"""Training utilities for world-model agents in the signaling game."""
+"""シグナリングゲームにおける世界モデル型エージェントの学習支援機能。"""
 
 from __future__ import annotations
 
@@ -14,12 +14,14 @@ from .models import ActionOutput, ObservationSummary, WorldModelPolicy
 
 
 def set_seed(seed: int) -> None:
+    """乱数シードを固定して再現性を確保する。"""
     random.seed(seed)
     torch.manual_seed(seed)
 
 
 @dataclass
 class StepLog:
+    """1ステップ分の観測・行動・報酬などを保持する記録。"""
     observation: Observation
     action_output: ActionOutput
     reward: float
@@ -30,12 +32,14 @@ class StepLog:
 
 @dataclass
 class EpisodeLog:
+    """1エピソードにおける各エージェントの軌跡と報酬を格納する。"""
     step_logs: List[List[StepLog]]
     total_rewards: List[float]
     history: List[dict]
 
 
 def _build_payload(observation: Observation) -> ObservationSummary:
+    """観測から注意メモリ用のサマリーデータを生成する。"""
     return ObservationSummary(
         step=observation.step,
         opponent_action=observation.opponent_action,
@@ -44,9 +48,10 @@ def _build_payload(observation: Observation) -> ObservationSummary:
 
 
 class SelfPlayTrainer:
-    """Train a population of agents sharing parameters in self-play."""
+    """パラメータを共有するエージェント集団を自己対戦で学習させるクラス。"""
 
     def __init__(self, env: TagPrisonersDilemma, policy: WorldModelPolicy, config: TrainingConfig):
+        """環境・方策・学習設定を受け取り、オプティマイザなどを初期化する。"""
         self.env = env
         self.policy = policy
         self.config = config
@@ -54,6 +59,7 @@ class SelfPlayTrainer:
         set_seed(config.seed)
 
     def _compute_returns(self, rewards: List[float]) -> List[float]:
+        """割引和に基づくリターン系列を後ろ向きに計算する。"""
         returns = []
         cumulative = 0.0
         for reward in reversed(rewards):
@@ -62,6 +68,7 @@ class SelfPlayTrainer:
         return list(reversed(returns))
 
     def _episode_loss(self, trajectory: List[StepLog], returns: List[float]) -> Dict[str, torch.Tensor]:
+        """1エージェント分の軌跡から方策損失・価値損失・エントロピーを算出する。"""
         policy_loss = torch.zeros((), device=self.policy.device)
         value_loss = torch.zeros((), device=self.policy.device)
         entropy = torch.zeros((), device=self.policy.device)
@@ -83,6 +90,7 @@ class SelfPlayTrainer:
         }
 
     def run_episode(self, sample: bool = True) -> EpisodeLog:
+        """環境を1エピソード進め、行動ログと報酬を収集する。"""
         observations = self.env.reset()
         num_agents = self.env.num_agents
         states = [self.policy.initial_state() for _ in range(num_agents)]
@@ -130,6 +138,7 @@ class SelfPlayTrainer:
         return EpisodeLog(step_logs=step_logs, total_rewards=cumulative_rewards, history=self.env.get_history())
 
     def train(self) -> List[Dict[str, float]]:
+        """指定エピソード数だけ学習を繰り返し、統計ログを返す。"""
         logs: List[Dict[str, float]] = []
 
         for episode in range(1, self.config.episodes + 1):

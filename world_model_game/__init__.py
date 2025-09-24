@@ -1,4 +1,4 @@
-"""Core package for the cooperative world model signaling game."""
+"""協調的世界モデル・シグナリングゲームの中核パッケージ。"""
 
 from .config import GameConfig, TrainingConfig, AnalysisConfig
 from .environment import TagPrisonersDilemma, Observation

@@ -1,4 +1,4 @@
-"""Neural modules implementing the world model agent."""
+"""世界モデル型エージェントを構成するニューラルモジュール群。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from torch.distributions import Categorical
 
 @dataclass
 class ObservationSummary:
-    """Lightweight summary of an observed opponent signal for analysis."""
+    """解析用途で用いる相手信号の簡易サマリーデータ。"""
 
     step: int
     opponent_action: Optional[int]
@@ -22,7 +22,7 @@ class ObservationSummary:
 
 @dataclass
 class AgentState:
-    """Hidden state of the agent's world model."""
+    """エージェントの世界モデルが保持する隠れ状態。"""
 
     hidden: torch.Tensor
     keys: torch.Tensor
@@ -31,6 +31,7 @@ class AgentState:
     payloads: List[ObservationSummary]
 
     def detach(self) -> "AgentState":
+        """計算グラフから切り離した状態のコピーを作成する。"""
         return AgentState(
             hidden=self.hidden.detach(),
             keys=self.keys.detach(),
@@ -42,6 +43,7 @@ class AgentState:
 
 @dataclass
 class ActionOutput:
+    """方策ステップの出力および付随統計をまとめた構造体。"""
     action: torch.Tensor
     tag: torch.Tensor
     logp_action: torch.Tensor
@@ -57,9 +59,10 @@ class ActionOutput:
 
 
 class AttentiveWorldModel(nn.Module):
-    """RNN-based world model with a content-based attention mechanism."""
+    """内容ベース注意機構を備えたRNN世界モデル。"""
 
     def __init__(self, obs_dim: int, hidden_dim: int, attention_dim: int):
+        """観測次元・隠れ次元・注意次元を指定してネットワークを構築する。"""
         super().__init__()
         self.obs_dim = obs_dim
         self.hidden_dim = hidden_dim
@@ -87,6 +90,7 @@ class AttentiveWorldModel(nn.Module):
     def forward(
         self, observation: torch.Tensor, state: AgentState
     ) -> tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """観測と状態を受け取り、次の隠れ状態と注意関連の中間値を算出する。"""
         embed = self.encoder(observation)
 
         context = None
@@ -116,7 +120,9 @@ class AttentiveWorldModel(nn.Module):
 
 
 class WorldModelController(nn.Module):
+    """世界モデルからの隠れ状態を行動・タグ出力へ写像する制御モジュール。"""
     def __init__(self, hidden_dim: int, num_tags: int):
+        """隠れ状態の次元とタグ種類数を受け取り、出力ヘッドを初期化する。"""
         super().__init__()
         self.policy_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
@@ -127,12 +133,13 @@ class WorldModelController(nn.Module):
         self.value_head = nn.Linear(hidden_dim, 1)
 
     def forward(self, hidden: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """隠れ状態から行動ロジット・タグロジット・価値推定を同時に算出する。"""
         features = self.policy_head(hidden)
         return self.action_head(features), self.tag_head(features), self.value_head(features)
 
 
 class WorldModelPolicy(nn.Module):
-    """Full agent consisting of an attentive world model and a controller."""
+    """注意付き世界モデルと制御モジュールを統合したエージェント方策。"""
 
     def __init__(
         self,
@@ -143,6 +150,7 @@ class WorldModelPolicy(nn.Module):
         attention_window: int = 10,
         device: str = "cpu",
     ):
+        """観測次元や注意窓幅などの設定から方策全体を初期化する。"""
         super().__init__()
         self.device = torch.device(device)
         self.hidden_dim = hidden_dim
@@ -156,6 +164,7 @@ class WorldModelPolicy(nn.Module):
         self.to(self.device)
 
     def initial_state(self) -> AgentState:
+        """エージェントの隠れ状態と注意メモリをリセットした初期状態を生成する。"""
         hidden = torch.zeros(self.hidden_dim, device=self.device)
         if self.attention_dim > 0:
             keys = torch.zeros((0, self.attention_dim), device=self.device)
@@ -175,6 +184,7 @@ class WorldModelPolicy(nn.Module):
         step: int,
         payload: ObservationSummary,
     ) -> AgentState:
+        """注意メモリへ最新のキー・値・メタ情報を追加し、窓幅を保つ。"""
         if self.attention_dim == 0:
             return replace(state, hidden=state.hidden, payloads=(state.payloads + [payload])[-self.attention_window :])
 
@@ -207,6 +217,7 @@ class WorldModelPolicy(nn.Module):
         payload: ObservationSummary,
         sample: bool = True,
     ) -> ActionOutput:
+        """観測と内部状態から行動・タグを決定し、新たな状態を返す。"""
         observation = observation.to(self.device)
         state = AgentState(
             hidden=state.hidden.to(self.device),

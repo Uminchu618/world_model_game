@@ -1,4 +1,4 @@
-"""Analysis utilities for probing the learned world model."""
+"""学習済み世界モデルを解析するための各種ユーティリティ。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from .models import ObservationSummary, WorldModelPolicy
 
 @dataclass
 class AgentStepRecord:
+    """1ステップ時点の隠れ状態や注視情報を保存する記録。"""
     step_index: int
     hidden: torch.Tensor
     action: int
@@ -34,6 +35,7 @@ class AgentStepRecord:
 
 @dataclass
 class EpisodeRecord:
+    """エピソード全体で収集した各エージェントのステップ記録。"""
     agent_steps: List[List[AgentStepRecord]]
     history: List[dict]
 
@@ -44,6 +46,7 @@ def collect_rollout(
     max_steps: Optional[int] = None,
     sample: bool = False,
 ) -> EpisodeRecord:
+    """方策を1エピソード実行し、解析用の軌跡を収集する。"""
     observations = env.reset()
     num_agents = env.num_agents
     states = [policy.initial_state() for _ in range(num_agents)]
@@ -109,6 +112,7 @@ def collect_rollout(
 
 
 def collect_rollouts(env: TagPrisonersDilemma, policy: WorldModelPolicy, episodes: int) -> List[EpisodeRecord]:
+    """指定回数エピソードを収集し、記録のリストを返す。"""
     records = []
     for _ in range(episodes):
         record = collect_rollout(env, policy, sample=False)
@@ -119,6 +123,7 @@ def collect_rollouts(env: TagPrisonersDilemma, policy: WorldModelPolicy, episode
 def _prepare_probe_dataset(
     records: Sequence[EpisodeRecord], agent_index: int, target: str
 ) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    """線形プローブ用に隠れ状態とラベルの組を構築する。"""
     features: List[torch.Tensor] = []
     labels: List[int] = []
 
@@ -155,6 +160,7 @@ def _prepare_probe_dataset(
 def train_linear_probe(
     features: torch.Tensor, labels: torch.Tensor, num_classes: int, config: AnalysisConfig
 ) -> Dict[str, float]:
+    """簡易線形分類器を学習し、損失と精度を返す。"""
     dataset_size = features.shape[0]
     indices = torch.randperm(dataset_size)
     split = max(1, int(0.8 * dataset_size))
@@ -187,6 +193,7 @@ def train_linear_probe(
 def probe_hidden_states(
     records: Sequence[EpisodeRecord], config: AnalysisConfig, agent_index: int = 0
 ) -> Dict[str, Dict[str, float]]:
+    """隠れ状態に含まれる行動・タグ情報の予測性能を評価する。"""
     results = {}
     for target in ["self_tag", "self_action", "opponent_action"]:
         features, labels, num_classes = _prepare_probe_dataset(records, agent_index, target)
@@ -195,6 +202,7 @@ def probe_hidden_states(
 
 
 def summarize_attention_focus(records: Sequence[EpisodeRecord], agent_index: int = 0) -> Dict[str, Dict[str, float]]:
+    """注意重みがどの履歴に向いているかを条件別に要約する。"""
     stats: Dict[str, List[float]] = {
         "after_cooperation_same_tag": [],
         "after_cooperation_defect_history": [],
@@ -236,6 +244,7 @@ def intervene_on_tags(
     forced_tag: int,
     episodes: int,
 ) -> Dict[str, float]:
+    """特定ステップで観測タグを介入させ、協調率への影響を測る。"""
     baseline_cooperation: List[float] = []
     intervention_cooperation: List[float] = []
 

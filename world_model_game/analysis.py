@@ -22,8 +22,9 @@ class AgentStepRecord:
     action: int
     tag: int
     reward: float
-    opponent_action: int
-    opponent_tag: int
+    opponent_index: Optional[int]
+    opponent_action: Optional[int]
+    opponent_tag: Optional[int]
     observed_opponent_action: Optional[int]
     observed_opponent_tag: Optional[int]
     attention_weights: Optional[torch.Tensor]
@@ -44,9 +45,10 @@ def collect_rollout(
     sample: bool = False,
 ) -> EpisodeRecord:
     observations = env.reset()
-    states = [policy.initial_state(), policy.initial_state()]
+    num_agents = env.num_agents
+    states = [policy.initial_state() for _ in range(num_agents)]
 
-    step_records = [[], []]
+    step_records: List[List[AgentStepRecord]] = [[] for _ in range(num_agents)]
     total_steps = max_steps or env.max_steps
 
     with torch.no_grad():
@@ -62,16 +64,20 @@ def collect_rollout(
 
             outputs = [
                 policy.step(observations[i].vector, states[i], step, payloads[i], sample=sample)
-                for i in range(2)
+                for i in range(num_agents)
             ]
 
-            actions = [int(outputs[0].action.item()), int(outputs[1].action.item())]
-            tags = [int(outputs[0].tag.item()), int(outputs[1].tag.item())]
+            actions = [int(output.action.item()) for output in outputs]
+            tags = [int(output.tag.item()) for output in outputs]
 
             next_obs, rewards, done, info = env.step(actions, tags)
+            opponents = info.get("opponents", (None,) * num_agents)
 
-            for i in range(2):
-                opponent_index = 1 - i
+            for i in range(num_agents):
+                opponent_index = opponents[i]
+                opponent_action = actions[opponent_index] if opponent_index is not None else None
+                opponent_tag = tags[opponent_index] if opponent_index is not None else None
+
                 step_records[i].append(
                     AgentStepRecord(
                         step_index=step,
@@ -79,8 +85,9 @@ def collect_rollout(
                         action=actions[i],
                         tag=tags[i],
                         reward=rewards[i],
-                        opponent_action=actions[opponent_index],
-                        opponent_tag=tags[opponent_index],
+                        opponent_index=opponent_index,
+                        opponent_action=opponent_action,
+                        opponent_tag=opponent_tag,
                         observed_opponent_action=observations[i].opponent_action,
                         observed_opponent_tag=observations[i].opponent_tag,
                         attention_weights=outputs[i].attention_weights.detach().cpu()
@@ -117,21 +124,25 @@ def _prepare_probe_dataset(
 
     for record in records:
         for step in record.agent_steps[agent_index]:
-            features.append(step.hidden)
             if target == "self_tag":
-                labels.append(step.tag)
+                label = step.tag
             elif target == "self_action":
-                labels.append(step.action)
+                label = step.action
             elif target == "opponent_action":
-                labels.append(step.opponent_action)
+                if step.opponent_action is None:
+                    continue
+                label = step.opponent_action
             else:
                 raise ValueError(f"Unknown probe target: {target}")
 
+            features.append(step.hidden)
+            labels.append(label)
+
+    if not labels:
+        raise ValueError("No data collected for probe")
+
     feature_tensor = torch.stack(features)
     label_tensor = torch.tensor(labels, dtype=torch.long)
-
-    if labels.numel() == 0:
-        raise ValueError("No data collected for probe")
 
     if target in {"self_action", "opponent_action"}:
         num_classes = 2
@@ -235,14 +246,15 @@ def intervene_on_tags(
         base_record = collect_rollout(base_env, policy, sample=False)
 
         observations = int_env.reset()
-        states = [policy.initial_state(), policy.initial_state()]
-        coop_counts = [0, 0]
+        num_agents = int_env.num_agents
+        states = [policy.initial_state() for _ in range(num_agents)]
+        coop_counts = [0 for _ in range(num_agents)]
 
         with torch.no_grad():
             for step in range(int_env.max_steps):
                 payloads = []
                 mod_observations = []
-                for agent_index in range(2):
+                for agent_index in range(num_agents):
                     obs = observations[agent_index]
                     if step == intervention_step:
                         obs = int_env.override_observation_tag(obs, forced_tag)
@@ -257,15 +269,15 @@ def intervene_on_tags(
 
                 outputs = [
                     policy.step(mod_observations[i].vector, states[i], step, payloads[i], sample=False)
-                    for i in range(2)
+                    for i in range(num_agents)
                 ]
 
-                actions = [int(outputs[0].action.item()), int(outputs[1].action.item())]
-                tags = [int(outputs[0].tag.item()), int(outputs[1].tag.item())]
+                actions = [int(output.action.item()) for output in outputs]
+                tags = [int(output.tag.item()) for output in outputs]
 
                 next_obs, rewards, done, info = int_env.step(actions, tags)
 
-                for i in range(2):
+                for i in range(num_agents):
                     coop_counts[i] += 1 if actions[i] == 0 else 0
                     states[i] = outputs[i].new_state
 
@@ -273,10 +285,14 @@ def intervene_on_tags(
                 if done:
                     break
 
-        base_coop = sum(1 for entry in base_record.history if entry["actions"][0] == 0) / max(
-            1, len(base_record.history)
-        )
-        intervention_rate = coop_counts[0] / max(1, int_env.max_steps)
+        total_pair_steps = max(1, len(base_record.history) * base_env.num_agents)
+        base_coop_count = 0
+        for entry in base_record.history:
+            for pair in entry.get("pairs", []):
+                base_coop_count += sum(1 for action in pair["actions"] if action == 0)
+        base_coop = base_coop_count / total_pair_steps
+
+        intervention_rate = sum(coop_counts) / max(1, int_env.max_steps * int_env.num_agents)
 
         baseline_cooperation.append(base_coop)
         intervention_cooperation.append(intervention_rate)

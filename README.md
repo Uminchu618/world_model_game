@@ -4,7 +4,7 @@
 
 ## 構成
 
-- `world_model_game/environment.py` — タグ付き囚人のジレンマ環境の実装。観測は相手の前ターンの行動とタグをワンホットで表現し、ターン番号を正規化した特徴も含みます。
+- `world_model_game/environment.py` — タグ付き囚人のジレンマ環境の実装。**偶数人のエージェント集団**が毎ターンランダムにペアリングされ、観測は直前に対戦した相手の行動とタグをワンホットで表現し、ターン番号を正規化した特徴も含みます。
 - `world_model_game/models.py` — 観測を埋め込み、**アテンション付き GRU** を用いた記憶・予測モジュールと、行動・タグを同時に決定する制御モジュールを定義します。アテンションの重みと対象の履歴が追跡できるよう、観測要約を内部メモリに保持します。
 - `world_model_game/training.py` — 共有パラメータによる自己対戦学習を行う REINFORCE+Value Baseline トレーナ。各ステップのログと隠れ状態を保存して分析に利用します。
 - `world_model_game/analysis.py` —
@@ -20,7 +20,7 @@
 2. 以下のコマンドで簡単な学習と分析を実行できます。
 
    ```bash
-   python scripts/run_experiment.py --episodes 4000 --max-steps 20
+   python scripts/run_experiment.py --episodes 4000 --max-steps 20 --num-agents 6
    ```
 
    実行結果は `experiment_results.json` に出力され、標準出力にも整形済み JSON として表示されます。
@@ -32,6 +32,7 @@
    | `--episodes` | 学習エピソード数 | 4000 |
    | `--max-steps` | 1 エピソードのステップ数 | 20 |
    | `--num-tags` | タグの種類数 | 4 |
+   | `--num-agents` | 自己対戦させるエージェント総数（偶数） | 2 |
    | `--hidden-dim` | GRU 隠れ状態次元 | 128 |
    | `--attention-dim` | アテンション次元 | 64 |
    | `--attention-window` | メモリに保持する履歴数 | 10 |

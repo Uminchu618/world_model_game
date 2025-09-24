@@ -12,6 +12,7 @@ class GameConfig:
 
     num_tags: int = 4
     max_steps: int = 20
+    num_agents: int = 2
     seed: int = 0
     payoff_matrix: Dict[Tuple[int, int], Tuple[float, float]] = field(
         default_factory=lambda: {

@@ -29,6 +29,10 @@ class TagPrisonersDilemma:
         self.payoff_matrix = config.payoff_matrix
         self.max_steps = config.max_steps
         self.num_tags = config.num_tags
+        self.num_agents = config.num_agents
+
+        if self.num_agents % 2 != 0:
+            raise ValueError("Number of agents must be even for random pairing.")
 
         # Observation layout slices
         self._action_slice = slice(0, 2)
@@ -75,49 +79,81 @@ class TagPrisonersDilemma:
     def reset(self) -> List[Observation]:
         self.step_index = 0
         self._history: List[dict] = []
-        self._last_actions: List[Optional[int]] = [None, None]
-        self._last_tags: List[Optional[int]] = [None, None]
+        self._last_actions: List[Optional[int]] = [None] * self.num_agents
+        self._last_tags: List[Optional[int]] = [None] * self.num_agents
 
-        return [self._build_observation(None, None, 0) for _ in range(2)]
+        return [self._build_observation(None, None, 0) for _ in range(self.num_agents)]
 
-    def _compute_rewards(self, actions: Sequence[int]) -> Tuple[float, float]:
-        payoff = self.payoff_matrix[(actions[0], actions[1])]
+    def _compute_pair_rewards(self, action_a: int, action_b: int) -> Tuple[float, float]:
+        payoff = self.payoff_matrix[(action_a, action_b)]
         return float(payoff[0]), float(payoff[1])
+
+    def _sample_pairs(self) -> List[Tuple[int, int]]:
+        ordering = torch.randperm(self.num_agents, generator=self._rng).tolist()
+        return [(ordering[i], ordering[i + 1]) for i in range(0, self.num_agents, 2)]
 
     def step(
         self, actions: Sequence[int], tags: Sequence[int]
-    ) -> Tuple[List[Observation], Tuple[float, float], bool, dict]:
-        if len(actions) != 2 or len(tags) != 2:
-            raise ValueError("Two actions and two tags must be provided.")
+    ) -> Tuple[List[Observation], Tuple[float, ...], bool, dict]:
+        if len(actions) != self.num_agents or len(tags) != self.num_agents:
+            raise ValueError(f"Expected {self.num_agents} actions and tags.")
 
-        rewards = self._compute_rewards(actions)
+        pairs = self._sample_pairs()
+        rewards: List[float] = [0.0 for _ in range(self.num_agents)]
+        opponents: List[Optional[int]] = [None for _ in range(self.num_agents)]
+        next_observations: List[Observation] = [
+            self._build_observation(None, None, self.step_index + 1)
+            for _ in range(self.num_agents)
+        ]
+
+        pair_history: List[dict] = []
 
         self.step_index += 1
         self._last_actions = list(actions)
         self._last_tags = list(tags)
 
-        next_observations = [
-            self._build_observation(actions[1], tags[1], self.step_index),
-            self._build_observation(actions[0], tags[0], self.step_index),
-        ]
+        for agent_a, agent_b in pairs:
+            reward_a, reward_b = self._compute_pair_rewards(actions[agent_a], actions[agent_b])
+            rewards[agent_a] = reward_a
+            rewards[agent_b] = reward_b
 
-        history_entry = {
-            "step": self.step_index,
-            "actions": tuple(actions),
-            "tags": tuple(tags),
-            "rewards": rewards,
-        }
+            opponents[agent_a] = agent_b
+            opponents[agent_b] = agent_a
+
+            next_observations[agent_a] = self._build_observation(
+                actions[agent_b], tags[agent_b], self.step_index
+            )
+            next_observations[agent_b] = self._build_observation(
+                actions[agent_a], tags[agent_a], self.step_index
+            )
+
+            pair_history.append(
+                {
+                    "agents": (agent_a, agent_b),
+                    "actions": (actions[agent_a], actions[agent_b]),
+                    "tags": (tags[agent_a], tags[agent_b]),
+                    "rewards": (reward_a, reward_b),
+                }
+            )
+
+        history_entry = {"step": self.step_index, "pairs": pair_history}
         self._history.append(history_entry)
 
         done = self.step_index >= self.max_steps
 
-        cooperation_count = sum(1 for entry in self._history if entry["actions"][0] == 0)
+        cooperation_count = 0
+        for entry in self._history:
+            for pair in entry["pairs"]:
+                cooperation_count += sum(1 for action in pair["actions"] if action == 0)
+        total_actions = max(1, len(self._history) * self.num_agents)
         info = {
             "history": list(self._history),
-            "cooperation_rate": cooperation_count / max(1, len(self._history)),
+            "cooperation_rate": cooperation_count / total_actions,
+            "pairings": pairs,
+            "opponents": tuple(opponents),
         }
 
-        return next_observations, rewards, done, info
+        return next_observations, tuple(rewards), done, info
 
     def get_history(self) -> List[dict]:
         return list(self._history)

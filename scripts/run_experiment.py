@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=TrainingConfig.episodes)
     parser.add_argument("--max-steps", type=int, default=GameConfig.max_steps)
     parser.add_argument("--num-tags", type=int, default=GameConfig.num_tags)
+    parser.add_argument("--num-agents", type=int, default=GameConfig.num_agents)
     parser.add_argument("--hidden-dim", type=int, default=TrainingConfig.hidden_dim)
     parser.add_argument("--attention-dim", type=int, default=TrainingConfig.attention_dim)
     parser.add_argument("--attention-window", type=int, default=TrainingConfig.attention_window)
@@ -42,7 +43,15 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    game_config = GameConfig(num_tags=args.num_tags, max_steps=args.max_steps, seed=args.seed)
+    if args.num_agents % 2 != 0:
+        raise SystemExit("--num-agents must be an even number")
+
+    game_config = GameConfig(
+        num_tags=args.num_tags,
+        max_steps=args.max_steps,
+        num_agents=args.num_agents,
+        seed=args.seed,
+    )
     training_config = TrainingConfig(
         episodes=args.episodes,
         learning_rate=args.learning_rate,
@@ -82,11 +91,14 @@ def main() -> None:
     )
 
     avg_training_reward = sum(log["avg_reward"] for log in training_logs) / max(1, len(training_logs))
-    avg_cooperation = sum(
+    total_actions = sum(len(agent_steps) for record in rollout_records for agent_steps in record.agent_steps)
+    cooperative_actions = sum(
         1 if entry.action == 0 else 0
         for record in rollout_records
-        for entry in record.agent_steps[0]
-    ) / max(1, sum(len(record.agent_steps[0]) for record in rollout_records))
+        for agent_steps in record.agent_steps
+        for entry in agent_steps
+    )
+    avg_cooperation = cooperative_actions / max(1, total_actions)
 
     results = {
         "training": {
